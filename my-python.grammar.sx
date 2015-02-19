@@ -1,0 +1,224 @@
+((single_input (or 'NEWLINE simple_stmt (seq compound_stmt 'NEWLINE)))
+ (file_input (seq (rep (or 'NEWLINE stmt)) 'ENDMARKER))
+ (eval_input (seq testlist (rep 'NEWLINE) 'ENDMARKER))
+ (decorator (seq "@" dotted_name (opt (seq "(" (opt arglist) ")")) 'NEWLINE))
+ (decorators (rep+ decorator))
+ (decorated (seq decorators (or classdef funcdef)))
+ (funcdef (seq "def" 'NAME parameters (opt (seq "->" test)) ":" suite))
+ (parameters (seq "(" (opt typedargslist) ")"))
+ (typedargslist
+  (or (seq
+       tfpdef
+       (opt (seq "=" test))
+       (rep (seq "," tfpdef (opt (seq "=" test))))
+       (opt
+        (seq
+         ","
+         (opt
+          (or (seq
+               "*"
+               (opt tfpdef)
+               (rep (seq "," tfpdef (opt (seq "=" test))))
+               (opt (seq "," "**" tfpdef)))
+              (seq "**" tfpdef))))))
+      (seq
+       "*"
+       (opt tfpdef)
+       (rep (seq "," tfpdef (opt (seq "=" test))))
+       (opt (seq "," "**" tfpdef)))
+      (seq "**" tfpdef)))
+ (tfpdef (seq 'NAME (opt (seq ":" test))))
+ (varargslist
+  (or (seq
+       vfpdef
+       (opt (seq "=" test))
+       (rep (seq "," vfpdef (opt (seq "=" test))))
+       (opt
+        (seq
+         ","
+         (opt
+          (or (seq
+               "*"
+               (opt vfpdef)
+               (rep (seq "," vfpdef (opt (seq "=" test))))
+               (opt (seq "," "**" vfpdef)))
+              (seq "**" vfpdef))))))
+      (seq
+       "*"
+       (opt vfpdef)
+       (rep (seq "," vfpdef (opt (seq "=" test))))
+       (opt (seq "," "**" vfpdef)))
+      (seq "**" vfpdef)))
+ (vfpdef 'NAME)
+ (stmt (or simple_stmt compound_stmt))
+ (simple_stmt (seq small_stmt (rep (seq ";" small_stmt)) (opt ";") 'NEWLINE))
+ (small_stmt
+  (or expr_stmt
+      del_stmt
+      pass_stmt
+      flow_stmt
+      import_stmt
+      global_stmt
+      nonlocal_stmt
+      assert_stmt))
+ (expr_stmt
+  (seq
+   testlist_star_expr
+   (or (seq augassign (or yield_expr testlist))
+       (rep (seq "=" (or yield_expr testlist_star_expr))))))
+ (testlist_star_expr
+  (seq (or test star_expr) (rep (seq "," (or test star_expr))) (opt ",")))
+ (augassign
+  (or "+=" "-=" "*=" "/=" "%=" "&=" "|=" "^=" "<<=" ">>=" "**=" "//="))
+ (del_stmt (seq "del" exprlist))
+ (pass_stmt "pass")
+ (flow_stmt (or break_stmt continue_stmt return_stmt raise_stmt yield_stmt))
+ (break_stmt "break")
+ (continue_stmt "continue")
+ (return_stmt (seq "return" (opt testlist)))
+ (yield_stmt yield_expr)
+ (raise_stmt (seq "raise" (opt (seq test (opt (seq "from" test))))))
+ (import_stmt (or import_name import_from))
+ (import_name (seq "import" dotted_as_names))
+ (import_from
+  (seq
+   "from"
+   (or (seq (rep (or "." "...")) dotted_name) (rep+ (or "." "...")))
+   "import"
+   (or "*" (seq "(" import_as_names ")") import_as_names)))
+ (import_as_name (seq 'NAME (opt (seq "as" 'NAME))))
+ (dotted_as_name (seq dotted_name (opt (seq "as" 'NAME))))
+ (import_as_names
+  (seq import_as_name (rep (seq "," import_as_name)) (opt ",")))
+ (dotted_as_names (seq dotted_as_name (rep (seq "," dotted_as_name))))
+ (dotted_name (seq 'NAME (rep (seq "." 'NAME))))
+ (global_stmt (seq "global" 'NAME (rep (seq "," 'NAME))))
+ (nonlocal_stmt (seq "nonlocal" 'NAME (rep (seq "," 'NAME))))
+ (assert_stmt (seq "assert" test (opt (seq "," test))))
+ (compound_stmt
+  (or if_stmt
+      while_stmt
+      for_stmt
+      try_stmt
+      with_stmt
+      funcdef
+      classdef
+      decorated))
+ (if_stmt
+  (seq
+   "if"
+   test
+   ":"
+   suite
+   (rep (seq "elif" test ":" suite))
+   (opt (seq "else" ":" suite))))
+ (while_stmt (seq "while" test ":" suite (opt (seq "else" ":" suite))))
+ (for_stmt
+  (seq "for" exprlist "in" testlist ":" suite (opt (seq "else" ":" suite))))
+ (try_stmt
+  (seq
+   "try"
+   ":"
+   suite
+   (or (seq
+        (rep+ (seq except_clause ":" suite))
+        (opt (seq "else" ":" suite))
+        (opt (seq "finally" ":" suite)))
+       (seq "finally" ":" suite))))
+ (with_stmt (seq "with" with_item (rep (seq "," with_item)) ":" suite))
+ (with_item (seq test (opt (seq "as" expr))))
+ (except_clause (seq "except" (opt (seq test (opt (seq "as" 'NAME))))))
+ (suite (or simple_stmt (seq 'NEWLINE 'INDENT (rep+ stmt) 'DEDENT)))
+ (test (or (seq or_test (opt (seq "if" or_test "else" test))) lambdef))
+ (test_nocond (or or_test lambdef_nocond))
+ (lambdef (seq "lambda" (opt varargslist) ":" test))
+ (lambdef_nocond (seq "lambda" (opt varargslist) ":" test_nocond))
+ (or_test (seq and_test (rep (seq "or" and_test))))
+ (and_test (seq not_test (rep (seq "and" not_test))))
+ (not_test (or (seq "not" not_test) comparison))
+ (comparison (seq expr (rep (seq comp_op expr))))
+ (comp_op
+  (or "<"
+      ">"
+      "=="
+      ">="
+      "<="
+      "<>"
+      "!="
+      "in"
+      (seq "not" "in")
+      "is"
+      (seq "is" "not")))
+ (star_expr (seq "*" expr))
+ (expr (seq xor_expr (rep (seq "|" xor_expr))))
+ (xor_expr (seq and_expr (rep (seq "^" and_expr))))
+ (and_expr (seq shift_expr (rep (seq "&" shift_expr))))
+ (shift_expr (seq arith_expr (rep (seq (or "<<" ">>") arith_expr))))
+ (arith_expr (seq term (rep (seq (or "+" "-") term))))
+ (term (seq factor (rep (seq (or "*" "/" "%" "//") factor))))
+
+ (factor (or (seq (or "+" "-" "~") factor) power))
+
+ ; Example reduction for power:
+ ; Note: process-trailers is defined in pyparse-prefix.rkt
+ ; It's stubbed out at the moment so it won't handle programs 
+ ; that attempt to do function call, array indexing or field 
+ ; reference.
+ (power ($--> (seq atom (rep trailer) (opt ($--> (seq "**" factor) ($ 2))))
+              (if ($ 3)                 
+                 `(BinOp ,(process-trailers ($ 1) ($ 2)) Pow ,($ 3))
+                  (process-trailers ($ 1) ($ 2)))))
+ (atom
+  (or (seq "(" (opt (or yield_expr testlist_comp)) ")")
+      (seq "[" (opt testlist_comp) "]")
+      (seq "{" (opt dictorsetmaker) "}")
+
+      'NAME
+      
+      ; Example reduction:
+      ($--> (seq 'NUMBER) `(Num ,($ 1)))
+
+      ; Example reduction:
+      ($--> (seq (rep+ 'STRING)) `(Str ,(apply string-append ($ 1))))
+      ; WARNING: Watch for byte strings with: bytes?
+
+      "..."
+      "None"
+      "True"
+      "False"))
+
+ (testlist_comp
+  (seq
+   (or test star_expr)
+   (or comp_for (seq (rep (seq "," (or test star_expr))) (opt ",")))))
+ (trailer
+  (or (seq "(" (opt arglist) ")")
+      (seq "[" subscriptlist "]")
+      (seq "." 'NAME)))
+ (subscriptlist (seq subscript (rep (seq "," subscript)) (opt ",")))
+ (subscript (or test (seq (opt test) ":" (opt test) (opt sliceop))))
+ (sliceop (seq ":" (opt test)))
+ (exprlist
+  (seq (or expr star_expr) (rep (seq "," (or expr star_expr))) (opt ",")))
+ (testlist (seq test (rep (seq "," test)) (opt ",")))
+ (dictorsetmaker
+  (or (seq
+       test
+       ":"
+       test
+       (or comp_for (seq (rep (seq "," test ":" test)) (opt ","))))
+      (seq test (or comp_for (seq (rep (seq "," test)) (opt ","))))))
+ (classdef (seq "class" 'NAME (opt (seq "(" (opt arglist) ")")) ":" suite))
+ (arglist
+  (seq
+   (rep (seq argument ","))
+   (or (seq argument (opt ","))
+       (seq "*" test (rep (seq "," argument)) (opt (seq "," "**" test)))
+       (seq "**" test))))
+ (argument (or (seq test (opt comp_for)) (seq test "=" test)))
+ (comp_iter (or comp_for comp_if))
+ (comp_for (seq "for" exprlist "in" or_test (opt comp_iter)))
+ (comp_if (seq "if" test_nocond (opt comp_iter)))
+ (encoding_decl 'NAME)
+ (yield_expr (seq "yield" (opt yield_arg)))
+ (yield_arg (or (seq "from" test) testlist)))

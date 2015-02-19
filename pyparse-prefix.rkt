@@ -36,19 +36,32 @@
 ;; Auxiliary definitions:
 
 
-;; TODO: Supply these here.
+;; Supply auxiliary helpers here, like process-trailers:
+
+(define (process-trailers base trailers)
+ (match trailers
+  ['()      base]
+  [else     (error "can't handle trailers yet")]))
+
+
+;; You may want to put definitions here rather than defining
+;; them in the grammar itself.
+
 
 
 ;; The parser:
 (define pyparse
   (cfg-parser
    
-   
    (tokens ID LIT PUNCT KEYWORD SPECIAL)
    
    (end EOF)
-   
-   (start file_input)
+  
+   ; ATTENTION: To support working "bottom-up" through the grammar,
+   ; the start symbol is set to `power` instead of `file_input`.
+   ; You should change the start symbol as you move up the kinds
+   ; of expressions.
+   (start power)
    
    (error (λ (tok-ok? tok-name tok-value)
             (if tok-ok?
