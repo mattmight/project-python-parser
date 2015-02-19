@@ -42,7 +42,7 @@
     [`(LIT ,(and value (? number?)))
       (token-NUMBER value)]
 
-    [`(LIT ,(and value (? string?)))
+    [`(LIT ,(and value (or (? bytes?) (? string?))))
       (token-STRING value)]
 
       ))
