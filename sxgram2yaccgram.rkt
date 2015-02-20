@@ -77,6 +77,8 @@
 
 ;; Helpers
 
+; unzip/callback : (b c) list -> (b list c list -> ans) -> ans
+; Unzips a list in continuation-passing style.
 (define (unzip/callback lst k)
   (match lst
     ['() (k '() '())]
@@ -86,8 +88,9 @@
 
 
 
-; forces-$*:
-; forces the expression to be of the form ($--> (seq <exp> ...) <body>)
+; forces-$* : exp -> exp
+; Forces the expression to be of the form ($--> (seq <exp> ...) <body>)
+; Yacc-like tools need high-level rules to have this form.
 (define (force-$* exp)
   (match exp
     [`($*--> ,pats ... ,body)
@@ -100,7 +103,9 @@
     
     [`($--> ,pat . ,body)
      ; =>
-     `($--> (seq ,pat) (let ([$ (λ (n) (list-ref ($ 1) n))] [$$ ($ 1)]) . ,body))]
+     `($--> (seq ,pat) 
+            (let ([$ (λ (n) (list-ref ($ 1) n))]
+                  [$$ ($ 1)]) . ,body))]
     
     [`(seq . ,exps)
      ; =>
@@ -114,7 +119,9 @@
          `(or . ,_))
      `($--> (seq ,exp) ($ 1))]))
 
-; force-or: forces the expression to be of the form (or <exp> ...)
+; force-or : exp -> exp
+; Forces the expression to be of the form (or <exp> ...)
+; Yacc-like tools need the or at the top level.
 (define (force-or exp)
   (match exp
     [`(or . ,exps) exp]
@@ -123,7 +130,19 @@
 
 
 
-; desugar: eliminates desugarable constructs from the grammar
+; desugar : grammar -> grammar
+; Eliminates these desugarable constructs from the grammar:
+
+; ($*--> <pat> ... <exp>)
+; (>--> <pat> <match-clauses>)
+; (@--> <pat> <exp>)
+; (cons <pat> <pat>)
+; (car <pat>)
+; (cdr <pat>)
+
+; (rep/sep <pat> <pat> <bool>)
+; (rep/sep+ <pat> <pat> <bool>)
+; #'(<qq-pat> ...) where <qq-pat> ::= #,<pat> | <pat>
 (define (desugar grammar)
   
   
@@ -132,6 +151,8 @@
   (define (add-rule! non-term rhs)
     (set! added-rules (cons `[,non-term ,rhs] added-rules)))
   
+  ; atomize! : exp -> exp
+  ; Makes an expression a terminal on non-terminal, if it isn't one.
   (define (atomize! exp)
     (match exp
 
@@ -154,6 +175,8 @@
        (add-rule! $nt exp)
        $nt]))
   
+  ; desugar-exp : exp -> exp
+  ; Desugars an individual construct and its children.
   (define (desugar-exp exp)
     (match exp
     
@@ -301,7 +324,8 @@
   (append transformed-rules added-rules))
   
   
-;; Transform a derp-style grammar into a racket-style yacc grammar:
+;; compile-derp-rules : derp-grammar -> yacc-grammar
+;; Transforms a derp-style grammar into a racket-style yacc grammar.
 (define (compile-derp-rules rules)
 
   (define extra-rules '())
@@ -310,11 +334,19 @@
     (set! extra-rules (cons `[,non-term ,exp] extra-rules)))
   
   ;; derp->yacc translation:
+  
+  ; wrapping makes $ and $$ available in the body:
   (define (wrap-$ size body)
     (define $$ (for/list ([i (in-range 1 (+ 1 size))]) `($ ,i)))
     `(let-syntax
-         [($ (λ (stx) (syntax-case stx ()
-                        [(_ n)  (datum->syntax #'n (string->symbol (string-append "$" (number->string (syntax->datum #'n)))))])))]
+         [($ (λ (stx)
+               (syntax-case stx ()
+                 [(_ n)  (datum->syntax
+                          #'n 
+                          (string->symbol 
+                           (string-append
+                            "$" (number->string
+                                 (syntax->datum #'n)))))])))]
        (let-syntax 
            ([$$ (λ (_) #'(list ,@$$))])
          . ,body)))
@@ -323,7 +355,12 @@
     (string->symbol str))
   
   (define (translate-abstract-terminal sym)
-    sym)
+    (match sym
+      ; Remove the extra layer of quoting used
+      ; to denote classes of terminals from
+      ; literal terminals, e.g. 'NUM versus :
+      [`(quote ,(and aterm (? symbol?)))
+       aterm]))
   
   (define (translate-exp exp)
     (match exp
@@ -331,7 +368,7 @@
       
       [(? symbol?)   exp]
       
-      [`(quote ,(and aterm (? symbol?)))
+      [`(quote ,(? symbol?))
        ;=>
        (translate-abstract-terminal exp)]))
   
@@ -352,7 +389,8 @@
        `(,nonterm ,@(translate-rhs rhs))]))
        
   
-  ;; normalize
+  ;; normalization ensures that all expressions on
+  ;; right-hand sides are flattened.
   (define (normalize-rule rule)
     (match rule
       [`(,nonterm ,exp)
@@ -361,11 +399,47 @@
   
   (define (normalize-rhs exp)
     (match (force-or exp)
-      [`(or . ,exps)   `(or ,@(map (compose flatten-$* force-$*) exps))]))
-    
+      [`(or . ,exps)  
+       ; =>
+       `(or ,@(map (compose flatten-$* force-$*) exps))]))
       
   
-  ;; flattening
+  ;; flattening converts an expression in the grammar into
+  ;; something suitable for a yacc/BNF-style grammar.
+  
+  ;; For example, consider a derp-style rule like:
+  
+  ; term ::= (seq factor (rep (seq "+" term)))
+  
+  ; this needs to flatten to:
+  
+  ; term   ::= (seq factor $rep1)
+  ; $rep1  ::= (rep (seq "+" term))
+  
+  ; and then into:
+  
+  ; term   ::= (seq factor $rep1)
+  ; $rep1  ::= (rep $seq1)
+  ; $seq1  ::= (seq "+" term)
+  
+  ; and then into:
+  
+  ; term   ::= (seq factor $rep1)
+  ; $rep1  ::= (seq $seq1 $rep1)
+  ;         |  (seq)
+  ; $seq1  ::= (seq "+" term)
+  
+  ; and, at this point, it is yacc/BNF-compatible.
+    
+  ; Technically, to keep the reductions the same, 
+  ; it becomes equivalent to:
+  
+  ; term   ::= (seq factor $rep1)
+  ; $rep1  ::= (cons $seq1 $rep1)
+  ;         |  (seq)
+  ; $seq1  ::= (seq "+" term)
+  
+  
   (define (flatten-$* exp)
     (match exp
       [`($--> (seq . , exps) . ,body)
@@ -430,7 +504,7 @@
       
       [`(quote ,(and aterm (? symbol?)))
        ;=>
-       aterm]
+       exp]
       
       [(? symbol?)
        ;=>
@@ -438,6 +512,7 @@
       
       [(? string?)
        ;=>
+       ; Make literal terminals reduce to their own string value:
        (define $nonterm (gensym (string->symbol (string-append "$" exp))))
        (add-rule $nonterm `(or ($--> (seq ,exp) ,exp)))
        $nonterm]))
