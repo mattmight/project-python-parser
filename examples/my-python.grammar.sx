@@ -173,16 +173,16 @@
       (seq "[" (opt testlist_comp) "]")
       (seq "{" (opt dictorsetmaker) "}")
 
-      'NAME
+      ($--> (seq 'NAME) `(Name ,(string->symbol ($ 1))))
       
       ; Example reduction:
-      ($--> (seq 'NUMBER) `(Num ,($ 1)))
+      ($--> 'NUMBER `(Num ,$$))
 
       ; Example reduction:
       ($--> (seq (rep+ 'STRING)) `(Str ,(apply string-append ($ 1))))
       ; WARNING: Watch for byte strings with: bytes?
 
-      "..."
+      ($--> "..." '(Ellipsis))
       "None"
       "True"
       "False"))
