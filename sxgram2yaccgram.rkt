@@ -1,7 +1,92 @@
 #lang racket
 
+; sxgram2yaccgram
+
+; sxgram2yaccgram transforms a derp-style grammar into
+; a yacc-style grammar, suitable for use with cfg-parser
+; in Racket.
+
+; (It may work with parser-tools/yacc, but there is no 
+;  guarantee it won't produce shift/reduce conflicts.)
 
 
+; It supports the common "regular" operations for patterns:
+
+; (seq <pat> ...)
+; (or <pat> ...)
+; (opt <pat> [ <default> ])
+; (rep <pat>)
+; (rep+ <pat>)
+
+
+; It also supports special reduction forms for patterns:
+
+; ($--> <pat> <body>) 
+;    where in the body:
+;        1. $$ is result of pattern match
+;        2. ($ n) is nth element in $$
+
+; ($*--> <pat> ... <exp>)
+;    acts like ($--> (seq <pat> ...) <exp>)
+
+; (>--> <pat> <match-clauses>)
+;    acts like ($--> <pat> (match $$ <match-clauses>))
+
+; (@--> <pat> <exp>)
+;    acts like ($--> <pat> <exp> (apply <exp> $$))
+
+; (cons <pat> <pat>)
+;    acts like seq, but with cons instead of list
+
+; (car <pat>)
+;    takes the car of the result
+
+; (cdr <pat>)
+;    takes the cdr of the result
+
+
+; It supports repetition-with-separator forms:
+
+; (rep/sep <pat> <pat> <bool>)
+; (rep/sep+ <pat> <pat> <bool>)
+
+; rep/sep matches <exp> <sep> ... <sep> <exp> [ <sep> ]
+; where zero or more matches of <exp> are allowed.
+
+; rep+/sep matches <exp> <sep> ... <sep> <exp> [ <sep> ]
+; where at least one match of <exp> is guaranteed
+
+
+
+; The boolean at the end determines whether an optional
+; trailing separator is allowed.
+
+
+; It also supports a special selective sequence form:
+
+; #'(<qq-pat> ...) where <qq-pat> ::= #,<pat> | <pat>
+;    is a selective sequence, where only elements
+;    marked with #, are retained
+
+; Ex: #'(#,foo bar #,baz) 
+;     ==>
+;     ($--> (seq foo bar baz) 
+;           (list ($ 1) ($ 3)))
+
+
+
+;; Helpers
+
+(define (unzip/callback lst k)
+  (match lst
+    ['() (k '() '())]
+    [(cons (list a b) tl)
+     (unzip/callback tl (λ (as bs)
+       (k (cons a as) (cons b bs))))]))
+
+
+
+; forces-$*:
 ; forces the expression to be of the form ($--> (seq <exp> ...) <body>)
 (define (force-$* exp)
   (match exp
@@ -13,6 +98,10 @@
      ; =>
      exp]
     
+    [`($--> ,pat . ,body)
+     ; =>
+     `($--> (seq ,pat) (let ([$ (λ (n) (list-ref ($ 1) n))] [$$ ($ 1)]) . ,body))]
+    
     [`(seq . ,exps)
      ; =>
      `($--> ,exp $$)]
@@ -20,12 +109,12 @@
     [(or `(quote ,_)
          (? symbol?)
          (? string?)
-         ; TODO: seq 
          `(rep ,_)
          `(rep+ ,_)
          `(or . ,_))
      `($--> (seq ,exp) ($ 1))]))
 
+; force-or: forces the expression to be of the form (or <exp> ...)
 (define (force-or exp)
   (match exp
     [`(or . ,exps) exp]
@@ -33,15 +122,8 @@
 
 
 
-(define (unzip/callback lst k)
-  (match lst
-    ['() (k '() '())]
-    [(cons (list a b) tl)
-     (unzip/callback tl (λ (as bs)
-       (k (cons a as) (cons b bs))))]))
 
-
-;; desugar
+; desugar: eliminates desugarable constructs from the grammar
 (define (desugar grammar)
   
   
@@ -54,7 +136,7 @@
     (match exp
 
       ; Terminals:
-      [`(quote ,(and aterm (? symbol?)))
+      [`(quote ,(? symbol?))
        ;=>
        exp]
       
@@ -72,24 +154,11 @@
        (add-rule! $nt exp)
        $nt]))
   
-  ; opt
-  ; rep
-  ; rep+ 
-  ; seq
-  ; $*-->
-  ; TODO: >-->
-  ; TODO: @-->
-  ; (cons <pat> <pat>)  ==>  ($*--> <pat> <pat> (cons ($ 1) ($ 2)))
-  ; #'(<qq-pat> ...) where <qq-pat> ::= #,<pat> | <pat>
-  ; TODO: (car <pat>)
-  ; TODO: (cdr <pat>)
-  ; TODO: (rep/sep <pat> <pat>)
-  ; TODO: (rep/sep+ <pat> <pat>)
   (define (desugar-exp exp)
     (match exp
     
       ; Terminals:
-      [`(quote ,(and aterm (? symbol?)))
+      [`(quote ,(? symbol?))
        ;=>
        exp]
       
@@ -101,9 +170,15 @@
        ;=>
        exp]
       
-      ; Reductions
+      ; Reductions:
       [`($--> ,exp . ,body)
        `($--> ,(desugar-exp exp) . ,body)]
+      
+      [`(@--> ,exp ,fn)
+       `($--> (seq ,exp) (apply fn ($ 1)))]
+      
+      [`(>--> ,exp . ,match-clauses)
+       `($--> (seq ,exp) . (match ($ 1) . ,match-clauses))]
       
       [`($*--> ,exps ... ,body)
        `($--> (seq ,@(map desugar-exp exps)) ,body)]
@@ -113,6 +188,9 @@
       
       [`(car ,exp)
        `($--> (seq ,(desugar-exp exp)) (car ($ 1)))]
+      
+      [`(cdr ,exp)
+       `($--> (seq ,(desugar-exp exp)) (cdr ($ 1)))]
       
       [`(syntax ,args)
        ;=>
@@ -152,6 +230,9 @@
        ; =>
        `(rep+ ,(desugar-exp exp))]
 
+      ; rep+/sep matches <exp> <sep> ... <sep> <exp> [ <sep> ]
+      ; (At least one <exp> match is guaranteed.)
+      ; This is useful for constructs like comma-separated lists.
       [`(rep+/sep ,sep ,exp ,sep-tail?)
        ; => 
 
@@ -173,6 +254,8 @@
             ($--> (seq ,$exp ,$rep . ,$tail) (cons ($ 1) ($ 2))))]
 
       
+      ; rep/sep matches <exp> <sep> ... <sep> <exp> [ <sep> ]
+      ; (Zero or more matches of <exp> are allowed.)
       [`(rep/sep ,sep ,exp ,sep-tail?)
        
        (define $exp (atomize! (desugar-exp exp)))
