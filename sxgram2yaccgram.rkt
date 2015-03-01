@@ -1,13 +1,13 @@
 #lang racket
 
-; sxgram2yaccgram
+; derp2
 
-; sxgram2yaccgram transforms a derp-style grammar into
-; a yacc-style grammar, suitable for use with cfg-parser
-; in Racket.
+; derp2 transforms a derp-style grammar into
+; a yacc-style grammar, suitable for use 
+; with parser-tools/cfg-parser in Racket.
 
 ; (It may work with parser-tools/yacc, but there is no 
-;  guarantee it won't produce shift/reduce conflicts.)
+; guarantee it won't produce shift/reduce conflicts.)
 
 
 ; It supports the common "regular" operations for patterns:
@@ -199,9 +199,9 @@
       
       [`(@--> ,exp ,fn)
        `($--> (seq ,exp) (apply ,fn ($ 1)))]
-      
+
       [`(>--> ,exp . ,match-clauses)
-       `($--> (seq ,exp) . (match ($ 1) . ,match-clauses))]
+       `($--> (seq ,exp) (match ($ 1) . ,match-clauses))]
       
       [`($*--> ,exps ... ,body)
        `($--> (seq ,@(map desugar-exp exps)) ,body)]
@@ -215,7 +215,7 @@
       [`(cdr ,exp)
        `($--> (seq ,(desugar-exp exp)) (cdr ($ 1)))]
       
-      [`(syntax ,args)
+      [(or `(syntax ,args) `(quasisyntax ,args))
        ;=>
        (define (desugar-quoted exp position)
          (match exp
@@ -532,7 +532,7 @@
 (match (current-command-line-arguments)
   
   [(vector "--drracket")
-   (set! grammar-input-file "my-python.grammar.sx")
+   (set! grammar-input-file "default.grammar.sx")
    (set! grammar-input-port (open-input-file grammar-input-file))]
   
   [(vector file-name)
